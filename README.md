@@ -65,8 +65,12 @@ webhook ──▶ sanitize + PII redact ──▶ LangGraph pipeline ──┬�
    guidelines, with a bounded refinement loop.
 3. **Guard.** A **deterministic** guardrail inspects the draft for liability
    admissions, AI self-identification, unauthorized discounts, and leaked PII.
-   Clean drafts pass; anything risky is flagged for a human. Approval is the
-   exception path, never the default.
+   A second, semantic layer then screens the draft for a customer's own PII
+   resurfacing in the reply and for disclosure of client, software, or system
+   details — it runs in addition to the deterministic sweep, not instead of
+   it, and fails closed like the rest of the guardrail. Clean drafts pass;
+   anything risky is flagged for a human. Approval is the exception path,
+   never the default.
 4. **Human-in-the-loop.** Operators approve — and may *edit* — a draft via a
    signed link or the API. An edited draft is **re-run through the same
    guardrail** before it can post; the operator cannot hand-wave a violation
@@ -84,7 +88,7 @@ suite, so a regression fails the build rather than shipping quietly.
 |---|---|---|
 | 1 | **Tenant isolation** | Every query runs through a tenant-scoped repository that hard-binds the tenant filter into the statement. There is no constructor path that yields an unscoped repository, and foreign-key writes are checked for cross-tenant parents. |
 | 2 | **Single PII gatekeeper** | Exactly one module masks PII, and it runs at the ingestion boundary — before storage, before the model, before logs. Everything downstream receives already-clean text and does not re-mask. |
-| 3 | **Guardrail fails closed** | The guardrail can only *block*, never approve under uncertainty. Its outcome defaults to BLOCK; the single pass branch is gated on a fully-completed, zero-violation detector sweep. Any node failure or model outage routes to a flagged/error terminal. |
+| 3 | **Guardrail fails closed** | The guardrail can only *block*, never approve under uncertainty. Its outcome defaults to BLOCK; the single pass branch is gated on a fully-completed, zero-violation sweep across both the deterministic checks and the semantic layer. Any node failure or model outage routes to a flagged/error terminal, and a fault in the semantic layer is logged separately from an actual detection so an outage there is never mistaken for a clean pass. |
 | 4 | **Human edits are re-guarded** | An operator-edited draft is re-run through the guardrail before approval. A reintroduced violation blocks the approval and the review stays flagged — with refinement disabled, so the shield blocks rather than rewrites. |
 | 5 | **Kill switch halts, in the right order** | The operator kill switch commits the tenant's halted state to the database **before** any external notification fires, so the system never announces a halt that didn't persist. The halted status is then enforced on the request path by the shared authentication dependency, which refuses a halted tenant before any handler runs. |
 | 6 | **Addressable graph state** | The agent checkpointer key is a validated, canonical, tenant-scoped identifier. Malformed, oversized, or forged keys are rejected at the boundary instead of being passed through to the state store. |

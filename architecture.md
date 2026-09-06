@@ -17,7 +17,9 @@ Three assumptions drive every structural decision:
 - **The model is not trusted to be safe.** Model output is checked by
   deterministic code before it can be published. A guardrail that depends on an
   LLM to decide whether LLM output is safe fails exactly when the model is
-  already misbehaving, so the always-on baseline is regex and rule based.
+  already misbehaving, so the always-on baseline is regex and rule based. A
+  narrower semantic check now runs in addition to that baseline, never in
+  place of it.
 - **Failure must degrade to "a human looks at it."** Every error path —
   provider outage, node exception, guardrail fault, persistence failure —
   terminates in a flagged or error state that a human picks up. No failure path
@@ -310,8 +312,13 @@ gatekeeper never saw.
 
 The guardrail can only block, never approve under uncertainty. Its outcome
 defaults to BLOCK; the single pass branch requires a fully-completed,
-zero-violation detector sweep. Node failures and provider outages route to
-flagged or system-error terminals. No exception path reaches approved. See §4.
+zero-violation sweep across both the deterministic detectors and the
+semantic layer that runs after them. Node failures and provider outages
+route to flagged or system-error terminals — an error inside the semantic
+layer is one such fault: it blocks the draft rather than passing it, and is
+logged as a distinct event from an actual detection so a semantic-layer
+outage is never mistaken for a clean pass. No exception path reaches
+approved. See §4.
 
 ### 4. Human edits are re-guarded
 
@@ -468,9 +475,15 @@ Stated because a security document that lists only strengths is not useful:
   ordinary prose. Full NER is the recall follow-up.
 - **Rate limiting is in-process** and therefore single-replica. Horizontal
   scaling requires moving both layers to a shared store first.
-- **Instructional-persistence detection is deterministic only.** An LLM judge
-  as a second opinion is the intended enhancement; the rule-based check is the
-  always-on baseline specifically so a provider outage cannot disable it.
+- **Instructional-persistence detection is deterministic-only for the general
+  case.** A semantic layer now supplements the rule-based check for two
+  specific patterns — a draft echoing a customer's own PII back to them, and a
+  draft disclosing details about the underlying software, client, or system —
+  running after the deterministic sweep and failing closed: an error there
+  blocks the draft rather than passing it, logged separately from an actual
+  detection so an outage is never mistaken for a clean pass. Instructional-
+  persistence patterns outside those two cases are still deterministic-only,
+  by design, so a provider outage can't disable the baseline.
 - **Provider replay protection is unimplemented** where the upstream scheme
   provides no signed timestamp to anchor to — see §8.
 - **PII detection over-matches in one known case**, redacting more than
